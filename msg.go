@@ -45,30 +45,42 @@ func (m ClientMsgType) str() string {
 	return "unknown"
 }
 
-type ClientMsg struct {
+type ClientMsgSend struct {
+	Id        string        `json:"id"`
+	Type      ClientMsgType `json:"t"`
+	Ack       int8          `json:"ack,omitempty"`
+	ServiceId string        `json:"sid,omitempty"`
+	Data      interface{}   `json:"d,omitempty"`
+}
+
+type ClientMsgRecv struct {
 	Id        string          `json:"id"`
 	Type      ClientMsgType   `json:"t"`
 	Ack       int8            `json:"ack,omitempty"`
-	ChannelId string          `json:"cid,omitempty"`
+	ServiceId string          `json:"sid,omitempty"`
 	Data      json.RawMessage `json:"d,omitempty"`
 }
 
-func (msg *ClientMsg) Validate() error {
+func (msg *ClientMsgRecv) decode(bs []byte) error {
+	return json.Unmarshal(bs, msg)
+}
+
+func (msg *ClientMsgRecv) Validate() error {
 	if msg == nil {
-		return fmt.Errorf("ClientMsg is null")
+		return fmt.Errorf("ClientMsgRecv is null")
 	}
 
 	if !msg.Type.checkValid() {
-		return fmt.Errorf("unknown ClientMsg type: %v", msg.Type)
+		return fmt.Errorf("unknown ClientMsgRecv type: %v", msg.Type)
 	}
 
 	if msg.Type.dataMust() && len(msg.Data) == 0 {
-		return fmt.Errorf("ClientMsg type %v must have data", msg.Type)
+		return fmt.Errorf("ClientMsgRecv type %v must have data", msg.Type)
 	}
 
 	switch msg.Type {
 	case ClientMsgTypeBiz:
-		if msg.ChannelId == "" {
+		if msg.ServiceId == "" {
 			return errors.New("empty cid for channel biz msg")
 		}
 	default:
@@ -79,9 +91,6 @@ func (msg *ClientMsg) Validate() error {
 }
 
 type InitMsgData struct {
-	SessionId       string `json:"session_id,omitempty"`
-	ContentEncoding string `json:"content_encoding,omitempty"`
-	AcceptEncoding  string `json:"accept_encoding,omitempty"`
-	PingInterval    int    `json:"ping_interval"`
-	Code            string `json:"code"`
+	AcceptEncoding CompressorType `json:"accept_encoding,omitempty"`
+	PingInterval   int            `json:"ping_interval,omitempty"`
 }
