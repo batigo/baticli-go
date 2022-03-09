@@ -1,6 +1,5 @@
 package baticli
 
-import "C"
 import (
 	"context"
 	"encoding/json"
