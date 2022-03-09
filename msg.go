@@ -53,6 +53,10 @@ type ClientMsgSend struct {
 	Data      interface{}   `json:"d,omitempty"`
 }
 
+func (msg *ClientMsgSend) encode() ([]byte, error) {
+	return json.Marshal(msg)
+}
+
 type ClientMsgRecv struct {
 	Id        string          `json:"id"`
 	Type      ClientMsgType   `json:"t"`

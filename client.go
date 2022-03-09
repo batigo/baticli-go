@@ -50,6 +50,7 @@ func NewConn(ctx context.Context, conf ConnConfig) (conn *Conn, err error) {
 		msgType:        websocket.TextMessage,
 		msgHandler:     conf.MsgHandler,
 	}
+	conn.conn.SetReadLimit(1024 * 1024)
 	if conf.BinaryMsg {
 		conn.msgType = websocket.BinaryMessage
 	}
@@ -97,7 +98,6 @@ type SendMsgFunc func(msg ClientMsgSend)
 type RecvMsgHanler func(msg ClientMsgRecv)
 
 type Conn struct {
-	inited         bool
 	conn           *websocket.Conn
 	compressorType CompressorType
 	compressor     Compressor
@@ -110,12 +110,6 @@ type Conn struct {
 }
 
 func (c *Conn) Init() (sendFunc SendMsgFunc, err error) {
-	if c.isInited() {
-		return
-	}
-
-	c.conn.SetReadLimit(1024 * 1024)
-
 	err = c.sendInitMsg()
 	if err != nil {
 		return
@@ -140,7 +134,6 @@ func (c *Conn) Init() (sendFunc SendMsgFunc, err error) {
 func (c *Conn) Close() {
 	close(c.stopChan)
 	close(c.msgsendChan)
-	c.conn.Close()
 }
 
 func (c *Conn) sendInitMsg() (err error) {
@@ -193,12 +186,6 @@ func (c *Conn) recvMsg() (msg ClientMsgRecv, err error) {
 	return
 }
 
-func (c *Conn) isInited() bool {
-	c.lock.RLock()
-	defer c.lock.RUnlock()
-	return c.inited
-}
-
 func (c *Conn) start() {
 	go func() {
 		defer close(c.msgrecvChan)
@@ -229,6 +216,25 @@ func (c *Conn) start() {
 				return
 			case msg := <-c.msgrecvChan:
 				c.msgHandler(msg)
+			}
+		}
+	}()
+
+	go func() {
+		defer c.conn.Close()
+		for {
+			select {
+			case <-c.stopChan:
+				return
+			case msg := <-c.msgsendChan:
+				bs, err := msg.encode()
+				if err != nil {
+					continue
+				}
+				err = c.conn.WriteMessage(c.msgType, bs)
+				if err != nil {
+					return
+				}
 			}
 		}
 	}()
