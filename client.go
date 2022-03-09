@@ -6,10 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/gorilla/websocket"
 	"net/url"
 	"sync"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 type DeviceType uint8
@@ -47,6 +48,7 @@ func NewConn(ctx context.Context, conf ConnConfig) (conn *Conn, err error) {
 		compressor:     NullCompressor{},
 		compressorType: conf.Compressor,
 		msgType:        websocket.TextMessage,
+		msgHandler:     conf.MsgHandler,
 	}
 	if conf.BinaryMsg {
 		conn.msgType = websocket.BinaryMessage
@@ -64,6 +66,7 @@ type ConnConfig struct {
 	HeartBeat  time.Duration
 	Compressor CompressorType
 	BinaryMsg  bool
+	MsgHandler RecvMsgHanler
 }
 
 func (conf *ConnConfig) validate() error {
@@ -77,6 +80,10 @@ func (conf *ConnConfig) validate() error {
 		return fmt.Errorf("user-id empty or too long(max length=64): %s", conf.Uid)
 	}
 
+	if conf.MsgHandler == nil {
+		return fmt.Errorf("MsgHandler required")
+	}
+
 	return nil
 }
 
@@ -86,27 +93,54 @@ var (
 	errMsgDataDecodeFail = errors.New("msg data decode fail")
 )
 
+type SendMsgFunc func(msg ClientMsgSend)
+type RecvMsgHanler func(msg ClientMsgRecv)
+
 type Conn struct {
 	inited         bool
 	conn           *websocket.Conn
 	compressorType CompressorType
 	compressor     Compressor
 	msgType        int
-
-	lock sync.RWMutex
+	msgsendChan    chan ClientMsgSend
+	msgrecvChan    chan ClientMsgRecv
+	stopChan       chan interface{}
+	msgHandler     RecvMsgHanler
+	lock           sync.RWMutex
 }
 
-func (c *Conn) Init() (err error) {
+func (c *Conn) Init() (sendFunc SendMsgFunc, err error) {
 	if c.isInited() {
 		return
 	}
 
+	c.conn.SetReadLimit(1024 * 1024)
+
 	err = c.sendInitMsg()
 	if err != nil {
-		return err
+		return
 	}
 
+	data, err := c.waitInitResp()
+	if err != nil {
+		return
+	}
+
+	c.msgsendChan = make(chan ClientMsgSend, 32)
+	c.msgrecvChan = make(chan ClientMsgRecv, 32)
+	c.stopChan = make(chan interface{})
+	c.compressor = newCompressor(data.AcceptEncoding)
+	sendFunc = func(msg ClientMsgSend) {
+		c.msgsendChan <- msg
+	}
+	c.start()
 	return
+}
+
+func (c *Conn) Close() {
+	close(c.stopChan)
+	close(c.msgsendChan)
+	c.conn.Close()
 }
 
 func (c *Conn) sendInitMsg() (err error) {
@@ -136,7 +170,7 @@ func (c *Conn) waitInitResp() (data InitMsgData, err error) {
 	}
 
 	var initData InitMsgData
-	err = json.Unmarshal(msg.Data, &initData)
+	err = initData.decode(msg.Data)
 	if err != nil {
 		err = errMsgDataDecodeFail
 		return
@@ -165,4 +199,37 @@ func (c *Conn) isInited() bool {
 	return c.inited
 }
 
-func (c *Conn) startRead() {}
+func (c *Conn) start() {
+	go func() {
+		defer close(c.msgrecvChan)
+		for {
+			_, bs, err := c.conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			var msg ClientMsgRecv
+			err = msg.decode(bs)
+			if err != nil {
+				continue
+			}
+			select {
+			case <-c.stopChan:
+				return
+			case c.msgrecvChan <- msg:
+				continue
+			}
+
+		}
+	}()
+
+	go func() {
+		for {
+			select {
+			case <-c.stopChan:
+				return
+			case msg := <-c.msgrecvChan:
+				c.msgHandler(msg)
+			}
+		}
+	}()
+}

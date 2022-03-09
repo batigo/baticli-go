@@ -94,3 +94,7 @@ type InitMsgData struct {
 	AcceptEncoding CompressorType `json:"accept_encoding,omitempty"`
 	PingInterval   int            `json:"ping_interval,omitempty"`
 }
+
+func (d *InitMsgData) decode(bs []byte) error {
+	return json.Unmarshal(bs, d)
+}
