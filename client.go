@@ -67,7 +67,6 @@ type ConnConfig struct {
 	HeartBeat  time.Duration
 	Compressor CompressorType
 	BinaryMsg  bool
-	MsgHandler RecvMsgHanler
 }
 
 func (conf *ConnConfig) validate() error {
@@ -81,10 +80,6 @@ func (conf *ConnConfig) validate() error {
 		return fmt.Errorf("user-id empty or too long(max length=64): %s", conf.Uid)
 	}
 
-	if conf.MsgHandler == nil {
-		return fmt.Errorf("MsgHandler required")
-	}
-
 	return nil
 }
 
@@ -95,21 +90,31 @@ var (
 )
 
 type SendMsgFunc func(msg ClientMsgSend)
-type RecvMsgHanler func(msg ClientMsgRecv)
+type RecvMsgHandler func(msg ClientMsgRecv)
+type ConnCloseHandler func()
 
 type Conn struct {
-	conn           *websocket.Conn
-	compressorType CompressorType
-	compressor     Compressor
-	msgType        int
-	msgsendChan    chan ClientMsgSend
-	msgrecvChan    chan ClientMsgRecv
-	stopChan       chan interface{}
-	msgHandler     RecvMsgHanler
-	lock           sync.RWMutex
+	conn             *websocket.Conn
+	compressorType   CompressorType
+	compressor       Compressor
+	msgType          int
+	msgsendChan      chan ClientMsgSend
+	msgrecvChan      chan ClientMsgRecv
+	stopChan         chan interface{}
+	msgHandler       RecvMsgHandler
+	connClosehandler ConnCloseHandler
+	lock             sync.RWMutex
 }
 
 func (c *Conn) Init() (sendFunc SendMsgFunc, err error) {
+	if c.connClosehandler == nil {
+		return nil, fmt.Errorf("conn close handler required")
+	}
+
+	if c.msgHandler == nil {
+		return nil, fmt.Errorf("recv msg handler required")
+	}
+
 	err = c.sendInitMsg()
 	if err != nil {
 		return
@@ -134,6 +139,14 @@ func (c *Conn) Init() (sendFunc SendMsgFunc, err error) {
 func (c *Conn) Close() {
 	close(c.stopChan)
 	close(c.msgsendChan)
+}
+
+func (c *Conn) SetRecvMsgHandler(handler RecvMsgHandler) {
+	c.msgHandler = handler
+}
+
+func (c *Conn) SetConnCloseHanler(handler ConnCloseHandler) {
+	c.connClosehandler = handler
 }
 
 func (c *Conn) sendInitMsg() (err error) {
@@ -221,7 +234,10 @@ func (c *Conn) start() {
 	}()
 
 	go func() {
-		defer c.conn.Close()
+		defer func() {
+			c.conn.Close()
+			c.connClosehandler()
+		}()
 		for {
 			select {
 			case <-c.stopChan:
