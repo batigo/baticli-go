@@ -48,7 +48,6 @@ func NewConn(ctx context.Context, conf ConnConfig) (conn *Conn, err error) {
 		compressor:     NullCompressor{},
 		compressorType: conf.Compressor,
 		msgType:        websocket.TextMessage,
-		msgHandler:     conf.MsgHandler,
 	}
 	conn.conn.SetReadLimit(1024 * 1024)
 	if conf.BinaryMsg {
