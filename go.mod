@@ -1,4 +1,4 @@
-module github.com/batigo/baticli
+module github.com/batigo/baticli-go
 
 go 1.17
 
