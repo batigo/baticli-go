@@ -74,7 +74,7 @@ type ConnConfig struct {
 }
 
 func (conf *ConnConfig) validate() error {
-	if conf.Dt.validate() {
+	if !conf.Dt.validate() {
 		return fmt.Errorf("unknown device-type: %v", conf.Dt)
 	}
 	if conf.Did == "" || len(conf.Did) > 64 {
