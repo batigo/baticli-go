@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/url"
 	"sync"
 	"time"
@@ -177,6 +178,7 @@ func (c *Conn) waitInitResp() (data InitMsgData, err error) {
 		return
 	}
 
+	log.Printf("===== %#v ==== %s", msg, msg.Data)
 	var initData InitMsgData
 	err = initData.decode(msg.Data)
 	if err != nil {
