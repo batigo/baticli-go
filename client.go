@@ -108,15 +108,18 @@ type Conn struct {
 	msgHandler       RecvMsgHandler
 	connClosehandler ConnCloseHandler
 	lock             sync.RWMutex
+	hbInterval       time.Duration
 }
 
-func (c *Conn) Init() (sendFunc SendMsgFunc, err error) {
+func (c *Conn) Init() (err error) {
 	if c.connClosehandler == nil {
-		return nil, fmt.Errorf("conn close handler required")
+		err = fmt.Errorf("conn close handler required")
+		return
 	}
 
 	if c.msgHandler == nil {
-		return nil, fmt.Errorf("recv msg handler required")
+		err = fmt.Errorf("recv msg handler required")
+		return
 	}
 
 	err = c.sendInitMsg()
@@ -130,6 +133,7 @@ func (c *Conn) Init() (sendFunc SendMsgFunc, err error) {
 	}
 
 	c.compressor = newCompressor(data.AcceptEncoding)
+	c.hbInterval = time.Second * time.Duration(data.PingInterval)
 	c.start()
 	return
 }
@@ -189,6 +193,11 @@ func (c *Conn) recvMsg() (msg ClientMsgRecv, err error) {
 		return
 	}
 
+	bs, err = c.compressor.Uncompress(bs)
+	if err != nil {
+		return
+	}
+
 	err = msg.decode(bs)
 	if err != nil {
 		err = errMsgDecodeFail
@@ -222,11 +231,14 @@ func (c *Conn) start() {
 
 	go func() {
 		for {
+			ticker := time.NewTicker(c.hbInterval).C
 			select {
 			case <-c.stopChan:
 				return
 			case msg := <-c.msgrecvChan:
 				c.msgHandler(msg)
+			case <-ticker:
+				c.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(time.Second*5))
 			}
 		}
 	}()
@@ -242,6 +254,10 @@ func (c *Conn) start() {
 				return
 			case msg := <-c.msgsendChan:
 				bs, err := msg.encode()
+				if err != nil {
+					continue
+				}
+				bs, err = c.compressor.Compress(bs)
 				if err != nil {
 					continue
 				}
