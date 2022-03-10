@@ -178,14 +178,14 @@ func (c *Conn) waitInitResp() (data InitMsgData, err error) {
 		return
 	}
 
-	log.Printf("===== %#v ==== %s", msg, msg.Data)
-	var initData InitMsgData
-	err = initData.decode(msg.Data)
+	log.Printf("===== %#v ==== %s\n", msg, msg.Data)
+	err = data.decode(msg.Data)
 	if err != nil {
 		err = errMsgDataDecodeFail
 		return
 	}
 
+	log.Printf("=====++ %#v\n", data)
 	return
 }
 
