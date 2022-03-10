@@ -25,7 +25,7 @@ const (
 	DeviceTypeOthers  DeviceType = 3
 )
 
-func NewConn(ctx context.Context, conf ConnConfig) (conn *Conn, err error) {
+func NewConn(ctx context.Context, conf ConnConfig) (conn *Conn, sendFunc SendMsgFunc, err error) {
 	err = conf.validate()
 	if err != nil {
 		return
@@ -47,6 +47,12 @@ func NewConn(ctx context.Context, conf ConnConfig) (conn *Conn, err error) {
 		compressor:     NullCompressor{},
 		compressorType: conf.Compressor,
 		msgType:        websocket.TextMessage,
+	}
+	conn.msgsendChan = make(chan ClientMsgSend, 32)
+	conn.msgrecvChan = make(chan ClientMsgRecv, 32)
+	conn.stopChan = make(chan interface{})
+	sendFunc = func(msg ClientMsgSend) {
+		conn.msgsendChan <- msg
 	}
 	conn.conn.SetReadLimit(1024 * 1024)
 	if conf.BinaryMsg {
@@ -123,13 +129,7 @@ func (c *Conn) Init() (sendFunc SendMsgFunc, err error) {
 		return
 	}
 
-	c.msgsendChan = make(chan ClientMsgSend, 32)
-	c.msgrecvChan = make(chan ClientMsgRecv, 32)
-	c.stopChan = make(chan interface{})
 	c.compressor = newCompressor(data.AcceptEncoding)
-	sendFunc = func(msg ClientMsgSend) {
-		c.msgsendChan <- msg
-	}
 	c.start()
 	return
 }
