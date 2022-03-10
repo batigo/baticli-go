@@ -159,7 +159,7 @@ func (c *Conn) sendInitMsg() (err error) {
 	msg := ClientMsgSend{
 		Id:   Genmsgid(),
 		Type: ClientMsgTypeInit,
-		Ack:  1,
+		Ack:  0,
 		Data: data,
 	}
 	bs, _ := json.Marshal(msg)
