@@ -15,11 +15,11 @@ import (
 type DeviceType uint8
 
 func (t DeviceType) validate() bool {
-	return t == DeviceTypeAndriod || t == DeviceTypeIos || t == DeviceTypeWeb || t == DeviceTypeOthers
+	return t == DeviceTypeAndroid || t == DeviceTypeIos || t == DeviceTypeWeb || t == DeviceTypeOthers
 }
 
 const (
-	DeviceTypeAndriod DeviceType = 0
+	DeviceTypeAndroid DeviceType = 0
 	DeviceTypeIos     DeviceType = 1
 	DeviceTypeWeb     DeviceType = 2
 	DeviceTypeOthers  DeviceType = 3
@@ -91,6 +91,7 @@ var (
 	errMsgTypeAbnormal   = errors.New("msg type abnormal")
 	errMsgDecodeFail     = errors.New("msg decode fail")
 	errMsgDataDecodeFail = errors.New("msg data decode fail")
+	errClientRecv        = errors.New("failed to recv msg")
 )
 
 type SendMsgFunc func(msg ClientMsgSend)
@@ -189,6 +190,7 @@ func (c *Conn) waitInitResp() (data InitMsgData, err error) {
 func (c *Conn) recvMsg() (msg ClientMsgRecv, err error) {
 	_, bs, err := c.conn.ReadMessage()
 	if err != nil {
+		err = errClientRecv
 		return
 	}
 
@@ -209,15 +211,14 @@ func (c *Conn) start() {
 	go func() {
 		defer close(c.msgrecvChan)
 		for {
-			_, bs, err := c.conn.ReadMessage()
-			if err != nil {
+			msg, err := c.recvMsg()
+			if err == errClientRecv {
 				return
 			}
-			var msg ClientMsgRecv
-			err = msg.decode(bs)
 			if err != nil {
 				continue
 			}
+
 			select {
 			case <-c.stopChan:
 				return
@@ -229,6 +230,7 @@ func (c *Conn) start() {
 	}()
 
 	go func() {
+		defer close(c.stopChan)
 		for {
 			ticker := time.NewTicker(c.hbInterval).C
 			select {
@@ -237,7 +239,10 @@ func (c *Conn) start() {
 			case msg := <-c.msgrecvChan:
 				c.msgHandler(msg)
 			case <-ticker:
-				c.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(time.Second*5))
+				err := c.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(time.Second*5))
+				if err != nil {
+					break
+				}
 			}
 		}
 	}()
