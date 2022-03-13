@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/url"
 	"sync"
 	"time"
@@ -48,11 +49,11 @@ func NewConn(ctx context.Context, conf ConnConfig) (conn *Conn, sendFunc SendMsg
 		compressorType: conf.Compressor,
 		msgType:        websocket.TextMessage,
 	}
-	conn.msgsendChan = make(chan ClientMsgSend, 32)
-	conn.msgrecvChan = make(chan ClientMsgRecv, 32)
+	conn.msgSendChan = make(chan ClientMsgSend, 32)
+	conn.msgRecvChan = make(chan ClientMsgRecv, 32)
 	conn.stopChan = make(chan interface{})
 	sendFunc = func(msg ClientMsgSend) {
-		conn.msgsendChan <- msg
+		conn.msgSendChan <- msg
 	}
 	conn.conn.SetReadLimit(1024 * 1024)
 	if conf.BinaryMsg {
@@ -103,8 +104,8 @@ type Conn struct {
 	compressorType   CompressorType
 	compressor       Compressor
 	msgType          int
-	msgsendChan      chan ClientMsgSend
-	msgrecvChan      chan ClientMsgRecv
+	msgSendChan      chan ClientMsgSend
+	msgRecvChan      chan ClientMsgRecv
 	stopChan         chan interface{}
 	msgHandler       RecvMsgHandler
 	connClosehandler ConnCloseHandler
@@ -141,7 +142,7 @@ func (c *Conn) Init() (err error) {
 
 func (c *Conn) Close() {
 	close(c.stopChan)
-	close(c.msgsendChan)
+	close(c.msgSendChan)
 }
 
 func (c *Conn) SetRecvMsgHandler(handler RecvMsgHandler) {
@@ -190,17 +191,22 @@ func (c *Conn) waitInitResp() (data InitMsgData, err error) {
 func (c *Conn) recvMsg() (msg ClientMsgRecv, err error) {
 	_, bs, err := c.conn.ReadMessage()
 	if err != nil {
+		log.Printf("failed to recv msg: %s", err.Error())
 		err = errClientRecv
 		return
 	}
 
 	bs, err = c.compressor.Uncompress(bs)
 	if err != nil {
+		log.Printf("failed to uncomress msg: %s", err.Error())
 		return
 	}
 
+	log.Printf("recv msg: %s", bs)
+
 	err = msg.decode(bs)
 	if err != nil {
+		log.Printf("failed to decode msg: %s - %s", bs, err.Error())
 		err = errMsgDecodeFail
 		return
 	}
@@ -209,7 +215,6 @@ func (c *Conn) recvMsg() (msg ClientMsgRecv, err error) {
 
 func (c *Conn) start() {
 	go func() {
-		defer close(c.msgrecvChan)
 		for {
 			msg, err := c.recvMsg()
 			if err == errClientRecv {
@@ -222,7 +227,7 @@ func (c *Conn) start() {
 			select {
 			case <-c.stopChan:
 				return
-			case c.msgrecvChan <- msg:
+			case c.msgRecvChan <- msg:
 				continue
 			}
 
@@ -236,7 +241,7 @@ func (c *Conn) start() {
 			select {
 			case <-c.stopChan:
 				return
-			case msg := <-c.msgrecvChan:
+			case msg := <-c.msgRecvChan:
 				c.msgHandler(msg)
 			case <-ticker:
 				err := c.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(time.Second*5))
@@ -256,7 +261,7 @@ func (c *Conn) start() {
 			select {
 			case <-c.stopChan:
 				return
-			case msg := <-c.msgsendChan:
+			case msg := <-c.msgSendChan:
 				bs, err := msg.encode()
 				if err != nil {
 					continue
