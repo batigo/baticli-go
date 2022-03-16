@@ -102,7 +102,7 @@ type ConnCloseHandler func()
 type Conn struct {
 	conn             *websocket.Conn
 	compressorType   CompressorType
-	compressor       Compressorr
+	compressor       Compressor
 	msgType          int
 	msgSendChan      chan *ClientMsg
 	msgRecvChan      chan *ClientMsg
@@ -195,17 +195,16 @@ func (c *Conn) recvMsg() (msg ClientMsg, err error) {
 		return
 	}
 
-	bs, err = c.compressor.Uncompress(bs)
-	if err != nil {
-		log.Printf("failed to uncomress msg: %s", err.Error())
-		return
-	}
-
-	log.Printf("recv msg: %s", bs)
 	err = proto.Unmarshal(bs, &msg)
 	if err != nil {
 		log.Printf("failed to decode msg: %s - %s", bs, err.Error())
 		err = errMsgDecodeFail
+		return
+	}
+
+	msg.BizData, err = c.compressor.Uncompress(msg.BizData)
+	if err != nil {
+		log.Printf("failed to uncomress msg: %s", err.Error())
 		return
 	}
 
@@ -268,8 +267,15 @@ func (c *Conn) start() {
 			case <-c.stopChan:
 				return
 			case msg := <-c.msgSendChan:
+				var err error
+				if len(msg.BizData) > 0 {
+					msg.BizData, err = c.compressor.Compress(msg.BizData)
+					if err != nil {
+						continue
+					}
+				}
+
 				bs, err := proto.Marshal(msg)
-				bs, err = c.compressor.Compress(bs)
 				if err != nil {
 					continue
 				}

@@ -7,7 +7,7 @@ import (
 	"github.com/klauspost/compress/flate"
 )
 
-func newCompressor(typ CompressorType) Compressorr {
+func newCompressor(typ CompressorType) Compressor {
 	switch typ {
 	case CompressorType_Deflate:
 		return DeflateCompressor{}
@@ -16,7 +16,7 @@ func newCompressor(typ CompressorType) Compressorr {
 	}
 }
 
-type Compressorr interface {
+type Compressor interface {
 	Compress([]byte) ([]byte, error)
 	Uncompress([]byte) ([]byte, error)
 	String() string
