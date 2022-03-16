@@ -202,10 +202,12 @@ func (c *Conn) recvMsg() (msg ClientMsg, err error) {
 		return
 	}
 
-	msg.BizData, err = c.compressor.Uncompress(msg.BizData)
-	if err != nil {
-		log.Printf("failed to uncomress msg: %s", err.Error())
-		return
+	if msg.GetCompressor() > 0 {
+		msg.BizData, err = newCompressor(msg.GetCompressor()).Uncompress(msg.BizData)
+		if err != nil {
+			log.Printf("failed to uncomress msg: %s", err.Error())
+			return
+		}
 	}
 
 	err = msg.Validate()
@@ -269,12 +271,11 @@ func (c *Conn) start() {
 			case msg := <-c.msgSendChan:
 				var err error
 				if len(msg.BizData) > 0 {
-					msg.BizData, err = c.compressor.Compress(msg.BizData)
-					if err != nil {
-						continue
+					data, err := c.compressor.Compress(msg.BizData)
+					if err == nil && len(data) < len(msg.BizData)+20 {
+						msg.BizData = data
 					}
 				}
-
 				bs, err := proto.Marshal(msg)
 				if err != nil {
 					continue
