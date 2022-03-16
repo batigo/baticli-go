@@ -275,6 +275,7 @@ func (c *Conn) start() {
 					if err == nil && len(data) < len(msg.BizData)+20 {
 						msg.BizData = data
 					}
+					msg.Compressor = &c.compressorType
 				}
 				bs, err := proto.Marshal(msg)
 				if err != nil {
