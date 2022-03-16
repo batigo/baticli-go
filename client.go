@@ -70,7 +70,7 @@ type ConnConfig struct {
 	Dt         DeviceType
 	Timeout    time.Duration
 	HeartBeat  time.Duration
-	Compressor Compressor
+	Compressor CompressorType
 	BinaryMsg  bool
 }
 
@@ -101,7 +101,7 @@ type ConnCloseHandler func()
 
 type Conn struct {
 	conn             *websocket.Conn
-	compressorType   Compressor
+	compressorType   CompressorType
 	compressor       Compressorr
 	msgType          int
 	msgSendChan      chan *ClientMsg
@@ -156,7 +156,7 @@ func (c *Conn) SetConnCloseHanler(handler ConnCloseHandler) {
 
 func (c *Conn) sendInitMsg() (err error) {
 	data := InitData{}
-	if c.compressorType != Compressor_Null {
+	if c.compressorType != CompressorType_Null {
 		data.AcceptCompressor = c.compressorType
 	}
 	msg := ClientMsg{

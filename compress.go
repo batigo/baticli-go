@@ -7,9 +7,9 @@ import (
 	"github.com/klauspost/compress/flate"
 )
 
-func newCompressor(typ Compressor) Compressorr {
+func newCompressor(typ CompressorType) Compressorr {
 	switch typ {
-	case Compressor_Deflate:
+	case CompressorType_Deflate:
 		return DeflateCompressor{}
 	default:
 		return NullCompressor{}
