@@ -7,26 +7,19 @@ import (
 	"github.com/klauspost/compress/flate"
 )
 
-func newCompressor(typ CompressorType) Compressor {
+func newCompressor(typ Compressor) Compressorr {
 	switch typ {
-	case CompressorTypeDeflate:
+	case Compressor_Deflate:
 		return DeflateCompressor{}
 	default:
 		return NullCompressor{}
 	}
 }
 
-type CompressorType string
-
-const (
-	CompressorTypeNull    CompressorType = "null"
-	CompressorTypeDeflate CompressorType = "deflate"
-)
-
-type Compressor interface {
+type Compressorr interface {
 	Compress([]byte) ([]byte, error)
 	Uncompress([]byte) ([]byte, error)
-	String() CompressorType
+	String() string
 }
 
 type DeflateCompressor struct{}
@@ -59,8 +52,8 @@ func (c DeflateCompressor) Uncompress(i []byte) (o []byte, err error) {
 	return
 }
 
-func (c DeflateCompressor) String() CompressorType {
-	return CompressorTypeDeflate
+func (c DeflateCompressor) String() string {
+	return "deflate"
 }
 
 type NullCompressor struct{}
@@ -73,6 +66,6 @@ func (c NullCompressor) Uncompress(i []byte) (o []byte, err error) {
 	return i, nil
 }
 
-func (c NullCompressor) String() CompressorType {
-	return CompressorTypeNull
+func (c NullCompressor) String() string {
+	return "null"
 }

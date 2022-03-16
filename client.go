@@ -2,7 +2,6 @@ package baticli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"google.golang.org/protobuf/proto"
 )
 
 type DeviceType uint8
@@ -49,10 +49,10 @@ func NewConn(ctx context.Context, conf ConnConfig) (conn *Conn, sendFunc SendMsg
 		compressorType: conf.Compressor,
 		msgType:        websocket.TextMessage,
 	}
-	conn.msgSendChan = make(chan ClientMsgSend, 32)
-	conn.msgRecvChan = make(chan ClientMsgRecv, 32)
+	conn.msgSendChan = make(chan *ClientMsg, 32)
+	conn.msgRecvChan = make(chan *ClientMsg, 32)
 	conn.stopChan = make(chan interface{})
-	sendFunc = func(msg ClientMsgSend) {
+	sendFunc = func(msg *ClientMsg) {
 		conn.msgSendChan <- msg
 	}
 	conn.conn.SetReadLimit(1024 * 1024)
@@ -70,7 +70,7 @@ type ConnConfig struct {
 	Dt         DeviceType
 	Timeout    time.Duration
 	HeartBeat  time.Duration
-	Compressor CompressorType
+	Compressor Compressor
 	BinaryMsg  bool
 }
 
@@ -89,23 +89,23 @@ func (conf *ConnConfig) validate() error {
 }
 
 var (
-	errMsgTypeAbnormal   = errors.New("msg type abnormal")
-	errMsgDecodeFail     = errors.New("msg decode fail")
-	errMsgDataDecodeFail = errors.New("msg data decode fail")
-	errClientRecv        = errors.New("failed to recv msg")
+	errMsgTypeAbnormal = errors.New("msg type abnormal")
+	errMsgInvalid      = errors.New("invalid msg")
+	errMsgDecodeFail   = errors.New("msg decode fail")
+	errClientRecv      = errors.New("failed to recv msg")
 )
 
-type SendMsgFunc func(msg ClientMsgSend)
-type RecvMsgHandler func(msg ClientMsgRecv)
+type SendMsgFunc func(msg *ClientMsg)
+type RecvMsgHandler func(msg *ClientMsg)
 type ConnCloseHandler func()
 
 type Conn struct {
 	conn             *websocket.Conn
-	compressorType   CompressorType
-	compressor       Compressor
+	compressorType   Compressor
+	compressor       Compressorr
 	msgType          int
-	msgSendChan      chan ClientMsgSend
-	msgRecvChan      chan ClientMsgRecv
+	msgSendChan      chan *ClientMsg
+	msgRecvChan      chan *ClientMsg
 	stopChan         chan interface{}
 	msgHandler       RecvMsgHandler
 	connClosehandler ConnCloseHandler
@@ -134,7 +134,8 @@ func (c *Conn) Init() (err error) {
 		return
 	}
 
-	c.compressor = newCompressor(data.AcceptEncoding)
+	c.compressorType = data.AcceptCompressor
+	c.compressor = newCompressor(data.AcceptCompressor)
 	c.hbInterval = time.Second * time.Duration(data.PingInterval)
 	c.start()
 	return
@@ -154,41 +155,39 @@ func (c *Conn) SetConnCloseHanler(handler ConnCloseHandler) {
 }
 
 func (c *Conn) sendInitMsg() (err error) {
-	data := InitMsgData{}
-	if c.compressorType != CompressorTypeNull {
-		data.AcceptEncoding = c.compressorType
+	data := InitData{}
+	if c.compressorType != Compressor_Null {
+		data.AcceptCompressor = c.compressorType
 	}
-	msg := ClientMsgSend{
-		Id:   Genmsgid(),
-		Type: ClientMsgTypeInit,
-		Ack:  0,
-		Data: data,
+	msg := ClientMsg{
+		Id:       Genmsgid(),
+		Type:     ClientMsgType_Init,
+		Ack:      0,
+		InitData: &data,
 	}
-	bs, _ := json.Marshal(msg)
+	bs, err := proto.Marshal(&msg)
+	if err != nil {
+		return
+	}
 	return c.conn.WriteMessage(c.msgType, bs)
 }
 
-func (c *Conn) waitInitResp() (data InitMsgData, err error) {
+func (c *Conn) waitInitResp() (data *InitData, err error) {
 	msg, err := c.recvMsg()
 	if err != nil {
 		return
 	}
 
-	if msg.Type != ClientMsgTypeInitResp {
+	if msg.Type != ClientMsgType_InitResp {
 		err = errMsgTypeAbnormal
 		return
 	}
 
-	err = data.decode(msg.Data)
-	if err != nil {
-		err = errMsgDataDecodeFail
-		return
-	}
-
+	data = msg.GetInitData()
 	return
 }
 
-func (c *Conn) recvMsg() (msg ClientMsgRecv, err error) {
+func (c *Conn) recvMsg() (msg ClientMsg, err error) {
 	_, bs, err := c.conn.ReadMessage()
 	if err != nil {
 		log.Printf("failed to recv msg: %s", err.Error())
@@ -203,13 +202,20 @@ func (c *Conn) recvMsg() (msg ClientMsgRecv, err error) {
 	}
 
 	log.Printf("recv msg: %s", bs)
-
-	err = msg.decode(bs)
+	err = proto.Unmarshal(bs, &msg)
 	if err != nil {
 		log.Printf("failed to decode msg: %s - %s", bs, err.Error())
 		err = errMsgDecodeFail
 		return
 	}
+
+	err = msg.Validate()
+	if err != nil {
+		log.Printf("recv invalid msg: %s - %s", msg.Id, err.Error())
+		err = errMsgInvalid
+		return
+	}
+
 	return
 }
 
@@ -227,7 +233,7 @@ func (c *Conn) start() {
 			select {
 			case <-c.stopChan:
 				return
-			case c.msgRecvChan <- msg:
+			case c.msgRecvChan <- &msg:
 				continue
 			}
 
@@ -262,10 +268,7 @@ func (c *Conn) start() {
 			case <-c.stopChan:
 				return
 			case msg := <-c.msgSendChan:
-				bs, err := msg.encode()
-				if err != nil {
-					continue
-				}
+				bs, err := proto.Marshal(msg)
 				bs, err = c.compressor.Compress(bs)
 				if err != nil {
 					continue

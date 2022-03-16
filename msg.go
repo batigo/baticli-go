@@ -1,75 +1,36 @@
 package baticli
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 )
 
-type ClientMsgType int8
-
-const (
-	ClientMsgTypeInit     ClientMsgType = 1
-	ClientMsgTypeInitResp ClientMsgType = 2
-	ClientMsgTypeBiz      ClientMsgType = 3
-	ClientMsgTypeAck      ClientMsgType = 4
-	ClientMsgTypeEcho     ClientMsgType = 100
-)
-
-func (m ClientMsgType) dataMust() bool {
-	return m == ClientMsgTypeInit
-}
-
 func (m ClientMsgType) checkValid() bool {
-	return m == ClientMsgTypeBiz ||
-		m == ClientMsgTypeAck ||
-		m == ClientMsgTypeEcho ||
-		m == ClientMsgTypeInit ||
-		m == ClientMsgTypeInitResp
+	return m == ClientMsgType_Biz ||
+		m == ClientMsgType_Ack ||
+		m == ClientMsgType_Echo ||
+		m == ClientMsgType_Init ||
+		m == ClientMsgType_InitResp
 }
 
 func (m ClientMsgType) str() string {
 	switch m {
-	case ClientMsgTypeInit:
+	case ClientMsgType_Init:
 		return "init"
-	case ClientMsgTypeInitResp:
+	case ClientMsgType_InitResp:
 		return "init_resp"
-	case ClientMsgTypeBiz:
+	case ClientMsgType_Biz:
 		return "biz"
-	case ClientMsgTypeAck:
+	case ClientMsgType_Ack:
 		return "ack"
-	case ClientMsgTypeEcho:
+	case ClientMsgType_Echo:
 		return "echo"
 	}
 
 	return "unknown"
 }
 
-type ClientMsgSend struct {
-	Id        string        `json:"id"`
-	Type      ClientMsgType `json:"t"`
-	Ack       int8          `json:"ack,omitempty"`
-	ServiceId string        `json:"sid,omitempty"`
-	Data      interface{}   `json:"d,omitempty"`
-}
-
-func (msg *ClientMsgSend) encode() ([]byte, error) {
-	return json.Marshal(msg)
-}
-
-type ClientMsgRecv struct {
-	Id        string          `json:"id"`
-	Type      ClientMsgType   `json:"t"`
-	Ack       int8            `json:"ack,omitempty"`
-	ServiceId string          `json:"sid,omitempty"`
-	Data      json.RawMessage `json:"d,omitempty"`
-}
-
-func (msg *ClientMsgRecv) decode(bs []byte) error {
-	return json.Unmarshal(bs, msg)
-}
-
-func (msg *ClientMsgRecv) Validate() error {
+func (msg *ClientMsg) Validate() error {
 	if msg == nil {
 		return fmt.Errorf("ClientMsgRecv is null")
 	}
@@ -78,27 +39,21 @@ func (msg *ClientMsgRecv) Validate() error {
 		return fmt.Errorf("unknown ClientMsgRecv type: %v", msg.Type)
 	}
 
-	if msg.Type.dataMust() && len(msg.Data) == 0 {
-		return fmt.Errorf("ClientMsgRecv type %v must have data", msg.Type)
-	}
-
 	switch msg.Type {
-	case ClientMsgTypeBiz:
-		if msg.ServiceId == "" {
-			return errors.New("empty cid for channel biz msg")
+	case ClientMsgType_Biz:
+		if msg.GetServiceId() == "" {
+			return errors.New("service-id missing for biz msg")
+		}
+		if msg.GetBizData() == nil {
+			return errors.New("biz-data missing for biz msg")
+		}
+	case ClientMsgType_Init, ClientMsgType_InitResp:
+		if msg.GetInitData() == nil {
+			return errors.New("init-data missing for init msg")
 		}
 	default:
 		//
 	}
 
 	return nil
-}
-
-type InitMsgData struct {
-	AcceptEncoding CompressorType `json:"accept_encoding,omitempty"`
-	PingInterval   int            `json:"ping_interval,omitempty"`
-}
-
-func (d *InitMsgData) decode(bs []byte) error {
-	return json.Unmarshal(bs, d)
 }
