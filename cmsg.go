@@ -20,15 +20,22 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// client消息类型
 type ClientMsgType int32
 
 const (
-	ClientMsgType_Unused   ClientMsgType = 0
-	ClientMsgType_Init     ClientMsgType = 1
+	// 未使用
+	ClientMsgType_Unused ClientMsgType = 0
+	// ws长连接初始化消息 client -> bati
+	ClientMsgType_Init ClientMsgType = 1
+	// ws长简介初始化响应消息 client <- bati
 	ClientMsgType_InitResp ClientMsgType = 2
-	ClientMsgType_Biz      ClientMsgType = 3
-	ClientMsgType_Ack      ClientMsgType = 4
-	ClientMsgType_Echo     ClientMsgType = 100
+	// 业务消息 client <-> bati <-> service
+	ClientMsgType_Biz ClientMsgType = 3
+	// ack消息
+	ClientMsgType_Ack ClientMsgType = 4
+	// echo 消息用于测试 client <-> bati
+	ClientMsgType_Echo ClientMsgType = 100
 )
 
 // Enum value maps for ClientMsgType.
@@ -81,7 +88,9 @@ func (ClientMsgType) EnumDescriptor() ([]byte, []int) {
 type CompressorType int32
 
 const (
-	CompressorType_Null    CompressorType = 0
+	// 消息biz_data不压缩
+	CompressorType_Null CompressorType = 0
+	// 使用deflate压缩biz_data
 	CompressorType_Deflate CompressorType = 1
 )
 
@@ -124,18 +133,26 @@ func (CompressorType) EnumDescriptor() ([]byte, []int) {
 	return file_cmsg_proto_rawDescGZIP(), []int{1}
 }
 
+// client消息
 type ClientMsg struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Id         string          `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Type       ClientMsgType   `protobuf:"varint,2,opt,name=type,proto3,enum=cmsg.ClientMsgType" json:"type,omitempty"`
-	Ack        int32           `protobuf:"varint,3,opt,name=ack,proto3" json:"ack,omitempty"`
-	ServiceId  *string         `protobuf:"bytes,4,opt,name=service_id,json=serviceId,proto3,oneof" json:"service_id,omitempty"`
+	// 消息id
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// 消息类型
+	Type ClientMsgType `protobuf:"varint,2,opt,name=type,proto3,enum=cmsg.ClientMsgType" json:"type,omitempty"`
+	// 本条消息是否需要回ack
+	Ack bool `protobuf:"varint,3,opt,name=ack,proto3" json:"ack,omitempty"`
+	// 业务消息对应的service id
+	ServiceId *string `protobuf:"bytes,4,opt,name=service_id,json=serviceId,proto3,oneof" json:"service_id,omitempty"`
+	// biz_data压缩类型
 	Compressor *CompressorType `protobuf:"varint,5,opt,name=compressor,proto3,enum=cmsg.CompressorType,oneof" json:"compressor,omitempty"`
-	BizData    []byte          `protobuf:"bytes,6,opt,name=biz_data,json=bizData,proto3,oneof" json:"biz_data,omitempty"`
-	InitData   *InitData       `protobuf:"bytes,7,opt,name=init_data,json=initData,proto3,oneof" json:"init_data,omitempty"`
+	// 业务消息data, 网关作为消息通道透传，  client <-> service
+	BizData []byte `protobuf:"bytes,6,opt,name=biz_data,json=bizData,proto3,oneof" json:"biz_data,omitempty"`
+	// 初始化信息
+	InitData *InitData `protobuf:"bytes,7,opt,name=init_data,json=initData,proto3,oneof" json:"init_data,omitempty"`
 }
 
 func (x *ClientMsg) Reset() {
@@ -184,11 +201,11 @@ func (x *ClientMsg) GetType() ClientMsgType {
 	return ClientMsgType_Unused
 }
 
-func (x *ClientMsg) GetAck() int32 {
+func (x *ClientMsg) GetAck() bool {
 	if x != nil {
 		return x.Ack
 	}
-	return 0
+	return false
 }
 
 func (x *ClientMsg) GetServiceId() string {
@@ -224,8 +241,10 @@ type InitData struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
+	// biz_data压缩类型
 	AcceptCompressor CompressorType `protobuf:"varint,1,opt,name=accept_compressor,json=acceptCompressor,proto3,enum=cmsg.CompressorType" json:"accept_compressor,omitempty"`
-	PingInterval     uint32         `protobuf:"varint,2,opt,name=ping_interval,json=pingInterval,proto3" json:"ping_interval,omitempty"`
+	// 长连接心跳间隔，单位秒
+	PingInterval uint32 `protobuf:"varint,2,opt,name=ping_interval,json=pingInterval,proto3" json:"ping_interval,omitempty"`
 }
 
 func (x *InitData) Reset() {
@@ -283,7 +302,7 @@ var file_cmsg_proto_rawDesc = []byte{
 	0x12, 0x27, 0x0a, 0x04, 0x74, 0x79, 0x70, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x13,
 	0x2e, 0x63, 0x6d, 0x73, 0x67, 0x2e, 0x43, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x4d, 0x73, 0x67, 0x54,
 	0x79, 0x70, 0x65, 0x52, 0x04, 0x74, 0x79, 0x70, 0x65, 0x12, 0x10, 0x0a, 0x03, 0x61, 0x63, 0x6b,
-	0x18, 0x03, 0x20, 0x01, 0x28, 0x05, 0x52, 0x03, 0x61, 0x63, 0x6b, 0x12, 0x22, 0x0a, 0x0a, 0x73,
+	0x18, 0x03, 0x20, 0x01, 0x28, 0x08, 0x52, 0x03, 0x61, 0x63, 0x6b, 0x12, 0x22, 0x0a, 0x0a, 0x73,
 	0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x5f, 0x69, 0x64, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x48,
 	0x00, 0x52, 0x09, 0x73, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x49, 0x64, 0x88, 0x01, 0x01, 0x12,
 	0x39, 0x0a, 0x0a, 0x63, 0x6f, 0x6d, 0x70, 0x72, 0x65, 0x73, 0x73, 0x6f, 0x72, 0x18, 0x05, 0x20,

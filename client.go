@@ -162,7 +162,6 @@ func (c *Conn) sendInitMsg() (err error) {
 	msg := ClientMsg{
 		Id:       Genmsgid(),
 		Type:     ClientMsgType_Init,
-		Ack:      0,
 		InitData: &data,
 	}
 	bs, err := proto.Marshal(&msg)
@@ -215,6 +214,11 @@ func (c *Conn) recvMsg() (msg ClientMsg, err error) {
 		log.Printf("recv invalid msg: %s - %s", msg.Id, err.Error())
 		err = errMsgInvalid
 		return
+	}
+
+	if msg.Ack {
+		ack := &ClientMsg{Id: msg.Id, Type: ClientMsgType_Ack}
+		c.msgSendChan <- ack
 	}
 
 	return
@@ -274,8 +278,8 @@ func (c *Conn) start() {
 					data, err := c.compressor.Compress(msg.BizData)
 					if err == nil && len(data) < len(msg.BizData)+20 {
 						msg.BizData = data
+						msg.Compressor = &c.compressorType
 					}
-					msg.Compressor = &c.compressorType
 				}
 				bs, err := proto.Marshal(msg)
 				if err != nil {
